@@ -1,0 +1,6 @@
+.env
+*.traj.json
+workspace/
+saved/
+results/
+__pycache__/

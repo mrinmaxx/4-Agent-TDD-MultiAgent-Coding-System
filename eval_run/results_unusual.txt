@@ -1,0 +1,16 @@
+P1 [PASS] 3x3 k=1 clockwise
+P1 [PASS] 3x3 k=8 full turn
+P1 [PASS] 1x1 unchanged
+P1 [PASS] 4x4 k=6 (corrected expected)
+P2 [HANG] min_each overrides small request: infinite loop / timed out after 8s
+P2 [PASS] impossible (budget < mins)
+P2 [PASS] round-robin remainder skips satisfied
+P2 [HANG] leftover discarded at caps: infinite loop / timed out after 8s
+P3 [PASS] @ order (b - a)
+P3 [PASS] @ with negatives
+P3 [PASS] ~ median of three
+P3 [PASS] ~ underflow does nothing
+P3 [PASS] $ collapse to sum
+P3 [PASS] @ on empty ignored -> 0
+P3 [PASS] # then @
+P3 [PASS] empty tokens

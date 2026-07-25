@@ -1,0 +1,36 @@
+=== Problem 1: is_match (Wildcard Matching) ===
+  [PASS] exact match: got True, expected True
+  [PASS] single ? : got True, expected True
+  [PASS] star matches empty (empty s): got True, expected True
+  [PASS] empty vs empty: got True, expected True
+  [PASS] nonempty vs empty pattern: got False, expected False
+  [PASS] star matches everything: got True, expected True
+  [PASS] ? cannot match empty: got False, expected False
+  [PASS] wrong single char: got False, expected False
+  [PASS] multi-star middle: got True, expected True
+  [PASS] mixed ? and * fails: got False, expected False
+  [PASS] pathological no-match (must not hang): got False, expected False
+
+=== Problem 2: add_strings (Arbitrary-Precision String Add) ===
+  [PASS] simple: got '134', expected '134'
+  [PASS] both zero: got '0', expected '0'
+  [PASS] carry adds a digit: got '1000', expected '1000'
+  [PASS] carry, reversed lengths: got '1000', expected '1000'
+  [PASS] unequal lengths: got '533', expected '533'
+  [PASS] zero plus number: got '12345', expected '12345'
+  [PASS] 20-digit carry ripple: got '100000000000000000000', expected '100000000000000000000'
+  [PASS] two large numbers: got '1111111110111111111011111111100', expected '1111111110111111111011111111100'
+
+=== Problem 3: num_decodings (Decode Ways) ===
+  [PASS] simple two ways: got 2, expected 2
+  [PASS] single digit: got 1, expected 1
+  [PASS] 226 -> 3 ways: got 3, expected 3
+  [PASS] leading zero invalid: got 0, expected 0
+  [PASS] 06 invalid group: got 0, expected 0
+  [PASS] 10 -> only J: got 1, expected 1
+  [PASS] 100 -> impossible: got 0, expected 0
+  [PASS] 27 -> only 2-7 (27>26): got 1, expected 1
+  [PASS] 2101 -> 1 way: got 1, expected 1
+  [PASS] 2020 -> ?: got 1, expected 1
+
+Done.

@@ -1,0 +1,25 @@
+=== Problem 1: max_profit (Weighted Job Scheduling + Cooldown) ===
+  [PASS] empty list: got 0, expected 0
+  [PASS] single job: got 10, expected 10
+  [PASS] touching endpoints, C=0: got 30, expected 30
+  [PASS] cooldown blocks second, pick higher: got 20, expected 20
+  [PASS] greedy trap (DP not greedy): got 100, expected 100
+  [PASS] cooldown chain optimization: got 100, expected 100
+
+=== Problem 2: min_semesters (Course Schedule / Min Semesters) ===
+  [PASS] zero courses: got 0, expected 0
+  [PASS] no prerequisites -> 1 semester: got 1, expected 1
+  [PASS] chain 0->1->2: got 3, expected 3
+  [PASS] cycle -> -1: got -1, expected -1
+  [PASS] diamond dependency: got 3, expected 3
+  [PASS] wide shallow + isolated node: got 2, expected 2
+
+=== Problem 3: min_cost_drive (Constrained Shortest Path + Fuel) ===
+  [PASS] start == target: got 0, expected 0
+  [PASS] reachable without refuel: got 0, expected 0
+  [FAIL] must refuel once: got -1, expected 7
+  [PASS] no path -> -1: got -1, expected -1
+  [PASS] road longer than tank -> -1: got -1, expected -1
+  [FAIL] min COST not distance: got -1, expected 5
+
+Done.

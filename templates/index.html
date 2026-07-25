@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Agent Studio</title>
+<style>
+  :root{
+    --bg:#eef1f6; --panel:#ffffff; --ink:#0f172a; --ink2:#334155; --muted:#64748b;
+    --line:#e4e8ef; --line2:#eef1f6;
+    --brand:#4f46e5; --brand-ink:#4338ca;
+    --planner:#4f46e5; --implementer:#0d9488;
+    --code:#0b1220; --code2:#111a2e; --codeink:#cbd5e1;
+    --ok:#15803d; --okbg:#dcfce7; --warn:#b45309; --warnbg:#fef3c7;
+    --err:#b91c1c; --errbg:#fee2e2; --blue:#1d4ed8; --bluebg:#dbeafe;
+    --shadow:0 1px 2px rgba(15,23,42,.04),0 4px 16px rgba(15,23,42,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);
+       color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased}
+  code,pre,.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+
+  header{background:linear-gradient(180deg,#0f172a,#111a2e);color:#fff;padding:14px 26px;
+         display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:20;box-shadow:0 1px 0 #00000022}
+  .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#0d9488);
+        display:grid;place-items:center;font-size:16px}
+  header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:-.2px}
+  header .sub{font-size:12px;color:#94a3b8;margin-top:-2px}
+  .spacer{flex:1}
+  .pill{font-size:12px;font-weight:600;padding:5px 11px;border-radius:999px;background:#1e293b;color:#cbd5e1;
+        display:inline-flex;align-items:center;gap:7px;border:1px solid #ffffff14}
+  .conn{width:8px;height:8px;border-radius:50%;background:#64748b}
+  .conn.on{background:#22c55e;box-shadow:0 0 0 3px #22c55e33}
+
+  main{max-width:1180px;margin:0 auto;padding:22px 22px 60px}
+  .section-label{font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);margin:0 0 8px 2px}
+
+  .composer{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:var(--shadow)}
+  .composer-row{display:flex;gap:12px}
+  textarea#task{flex:1;resize:vertical;min-height:56px;padding:13px 15px;border:1px solid var(--line);border-radius:12px;
+       font-size:15px;font-family:inherit;background:#fbfcfe;color:var(--ink)}
+  textarea#task:focus{outline:none;border-color:var(--brand);background:#fff;box-shadow:0 0 0 4px #4f46e51f}
+  .btn{border:none;border-radius:12px;font-weight:650;cursor:pointer;font-size:14px;transition:.15s;
+       display:inline-flex;align-items:center;gap:7px;justify-content:center}
+  .btn.primary{background:var(--brand);color:#fff;padding:0 24px}
+  .btn.primary:hover{background:var(--brand-ink)}
+  .btn.ghost{background:#f1f5f9;color:var(--ink2);padding:9px 14px;border:1px solid var(--line)}
+  .btn.ghost:hover{background:#e8edf5}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .examples{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+  .ex{font-size:12.5px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:#fbfcfe;
+      cursor:pointer;color:var(--muted);transition:.15s}
+  .ex:hover{border-color:var(--brand);color:var(--brand);background:#fff}
+
+  .banner{display:none;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;font-weight:600;margin:16px 0 0;font-size:14px}
+  .banner.show{display:flex}
+  .banner.running{background:var(--bluebg);color:var(--blue)}
+  .banner.done{background:var(--okbg);color:var(--ok)}
+  .banner.warn{background:var(--warnbg);color:var(--warn)}
+  .banner.err{background:var(--errbg);color:var(--err)}
+  .spin{width:14px;height:14px;border:2px solid #1d4ed855;border-top-color:#1d4ed8;border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:12px}
+  @media(max-width:980px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
+  .card>.head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line2);
+       font-weight:700;font-size:14.5px}
+  .ic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:14px;color:#fff;flex:none}
+  #planner .ic{background:var(--planner)} #implementer .ic{background:var(--implementer)} #tester .ic{background:#b45309}
+  .dot{width:8px;height:8px;border-radius:50%;background:#cbd5e1}
+  .dot.active{background:#22c55e;animation:pulse 1.3s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 #22c55e66}70%{box-shadow:0 0 0 7px #22c55e00}100%{box-shadow:0 0 0 0 #22c55e00}}
+  .exitchip{margin-left:auto;font-size:11.5px;font-weight:700;padding:2px 10px;border-radius:999px}
+  .exitchip.ok{background:var(--okbg);color:var(--ok)} .exitchip.bad{background:var(--warnbg);color:var(--warn)}
+
+  .feed{max-height:440px;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:#fcfdff}
+  .feed:empty::after{content:"Waiting for the agent to start…";color:var(--muted);font-size:13px}
+  .step{border:1px solid var(--line);border-radius:12px;padding:10px 12px;animation:fade .22s ease;background:#fff}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+  .step .role{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;
+       padding:2px 8px;border-radius:6px;margin-bottom:6px}
+  .role.assistant{background:#eef2ff;color:#4338ca} #implementer .role.assistant{background:#ccfbf1;color:#0f766e} #tester .role.assistant{background:#fef3c7;color:#b45309}
+  .role.tool{background:#f1f5f9;color:#475569} .role.exit{background:var(--warnbg);color:var(--warn)}
+  .txt{white-space:pre-wrap;font-size:13.5px;color:var(--ink2)}
+  .codeblock{margin-top:8px;border-radius:9px;overflow:hidden;border:1px solid #1e293b}
+  .codeblock .bar{background:#0b1220;color:#64748b;font-size:10.5px;padding:5px 10px;font-weight:700;letter-spacing:.4px}
+  pre.cmd,pre.out{background:var(--code);color:var(--codeink);padding:10px 12px;margin:0;font-size:12.5px;
+       white-space:pre-wrap;overflow-x:auto}
+  pre.out{background:var(--code2)}
+  .rc{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;margin-top:7px}
+  .rc.ok{background:var(--okbg);color:var(--ok)} .rc.bad{background:var(--errbg);color:var(--err)}
+
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  @media(max-width:860px){.row2{grid-template-columns:1fr}}
+  .handoff .body{padding:14px}
+  .handoff pre{background:#f8faff;border:1px dashed #c7d2fe;color:var(--ink2);border-radius:10px;padding:13px;
+       white-space:pre-wrap;font-size:13px;margin:0;max-height:230px;overflow:auto}
+
+  .tabs{display:flex;gap:4px;flex-wrap:wrap;padding:12px 14px 0;background:#fcfdff}
+  .tab{font-size:12px;padding:6px 11px;border:1px solid var(--line);border-bottom:none;border-radius:9px 9px 0 0;
+       cursor:pointer;background:#f1f5f9;color:var(--muted);font-weight:600;transition:.12s}
+  .tab:hover{color:var(--ink2)}
+  .tab.active{background:var(--code);color:#fff;border-color:var(--code)}
+  #fileBody{margin:0;background:var(--code);color:var(--codeink);padding:13px;font-size:12.5px;white-space:pre;
+       min-height:70px;max-height:240px;overflow:auto}
+  .console{border-top:1px solid var(--line2);padding:13px 14px;background:#fbfcfe}
+  .console .lbl{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.4px;text-transform:uppercase;margin-bottom:8px}
+  .console-row{display:flex;gap:8px;align-items:center}
+  .in{flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:10px;font-size:13px;font-family:inherit;background:#fff;color:var(--ink)}
+  .in.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12.5px}
+  .in:focus{outline:none;border-color:var(--implementer);box-shadow:0 0 0 4px #0d948820}
+  .btn.run{background:var(--implementer);color:#fff;padding:9px 16px;white-space:nowrap}
+  .btn.run:hover{background:#0f766e}
+  textarea#stdinInput{width:100%;margin-top:8px;min-height:52px;resize:vertical}
+  .runout{margin-top:10px;display:none}
+  .runout.show{display:block}
+  .runout .status{font-size:12px;font-weight:700;margin-bottom:6px}
+  .empty{color:var(--muted);font-size:13px;padding:14px}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:7px}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🤝</div>
+  <div>
+    <h1>Multi-Agent Studio</h1>
+    <div class="sub">Planner &amp; Implementer · mini-swe-agent</div>
+  </div>
+  <div class="spacer"></div>
+  <span class="pill" id="modelChip">model: …</span>
+  <span class="pill"><span class="conn" id="conn"></span><span id="connText">idle</span></span>
+</header>
+
+<main>
+  <p class="section-label">1 · Prompt the agents</p>
+  <div class="composer">
+    <div class="composer-row">
+      <textarea id="task" placeholder="Describe what to build…  e.g. Write solution.py with a function that reads a line from stdin and prints it reversed."></textarea>
+      <button class="btn primary" id="runBtn" onclick="startRun()">Run ▶</button>
+      <button class="btn ghost" id="graphBtn" onclick="startGraph()" title="planner → implementer → tester, with a retry loop">Run 3-Agent ▶</button>
+    </div>
+    <div class="examples">
+      <span class="ex" onclick="setEx(this)">Write solution.py that reads a line from input() and prints it reversed.</span>
+      <span class="ex" onclick="setEx(this)">Write solution.py with is_prime(n); read n from stdin and print True or False.</span>
+      <span class="ex" onclick="setEx(this)">Write solution.py that sums the integer command-line arguments and prints the total.</span>
+    </div>
+  </div>
+
+  <div class="banner" id="banner"></div>
+
+  <p class="section-label" style="margin-top:20px">2 · Watch the agents work — planner · implementer · tester (live)</p>
+  <div class="grid">
+    <div class="card" id="planner">
+      <div class="head"><span class="ic">🧠</span> Planner <span class="dot" id="dot-planner"></span>
+        <span style="color:var(--muted);font-weight:500;font-size:12.5px">what it's planning</span>
+        <span class="exitchip" id="exit-planner" style="display:none"></span></div>
+      <div class="feed" id="feed-planner"></div>
+    </div>
+    <div class="card" id="implementer">
+      <div class="head"><span class="ic">⚙️</span> Implementer <span class="dot" id="dot-implementer"></span>
+        <span style="color:var(--muted);font-weight:500;font-size:12.5px">what it's coding</span>
+        <span class="exitchip" id="exit-implementer" style="display:none"></span></div>
+      <div class="feed" id="feed-implementer"></div>
+    </div>
+    <div class="card" id="tester">
+      <div class="head"><span class="ic">🧪</span> Tester <span class="dot" id="dot-tester"></span>
+        <span style="color:var(--muted);font-weight:500;font-size:12.5px">writing &amp; running its own tests</span>
+        <span class="exitchip" id="exit-tester" style="display:none"></span></div>
+      <div class="feed" id="feed-tester"></div>
+    </div>
+  </div>
+
+  <div class="row2">
+    <div class="card handoff">
+      <div class="head"><span class="ic" style="background:#8b5cf6">🔁</span> Hand-off <span style="color:var(--muted);font-weight:500;font-size:12.5px">PLAN.md</span></div>
+      <div class="body"><pre id="plan"><span class="empty">The planner writes PLAN.md; the implementer receives it. It appears here.</span></pre></div>
+    </div>
+
+    <div class="card">
+      <div class="head"><span class="ic" style="background:#0b1220">📁</span> 3 · Saved runs
+        <select id="runSelect" onchange="selectRun(this.value)"
+          style="margin-left:auto;max-width:300px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;font-size:12px;background:#fff;color:var(--ink);font-family:'JetBrains Mono',monospace;cursor:pointer"></select></div>
+      <div class="tabs" id="tabs"></div>
+      <pre id="fileBody"><span class="empty">Produced files are saved here after each run — pick one and run it below.</span></pre>
+      <div class="console">
+        <div class="lbl">Run a file — provide your input, see the output</div>
+        <div class="console-row">
+          <input class="in mono" id="argsInput" placeholder="command-line arguments (optional)  e.g.  5 10">
+          <button class="btn ghost" id="stdinToggle" onclick="toggleStdin()">+ stdin</button>
+          <button class="btn run" id="fileRunBtn" onclick="runFile()" disabled>▶ Run</button>
+        </div>
+        <textarea class="in mono" id="stdinInput" placeholder="standard input fed to the program (optional) — one value per line" hidden></textarea>
+        <div class="hint">Runs the selected file. Args are split shell-style; the stdin box is piped to the program (for input()).</div>
+        <div class="runout" id="runout">
+          <div class="status" id="runRc"></div>
+          <div class="codeblock"><div class="bar" id="runCmd">output</div><pre class="out" id="runResult"></pre></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+let files = [], activeFile = null, poll = null, runs = [], activeRun = null;
+
+function setEx(el){ document.getElementById('task').value = el.textContent; }
+function banner(kind, msg, spin){ const b=document.getElementById('banner'); b.className='banner show '+kind;
+  b.innerHTML=(spin?'<span class="spin"></span>':'')+'<span>'+msg+'</span>'; }
+function conn(on, text){ document.getElementById('conn').classList.toggle('on',on);
+  document.getElementById('connText').textContent=text; }
+function truncate(s,n){ return s&&s.length>n ? s.slice(0,n)+' …[truncated]' : (s||''); }
+function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function addStep(ev){
+  if(ev.role==='system'||ev.role==='user') return;       // hide prompt/hand-off boilerplate
+  const feed=document.getElementById('feed-'+ev.agent); if(!feed) return;
+  const div=document.createElement('div'); div.className='step';
+  let h='<span class="role '+ev.role+'">'+ev.role+(ev.step?' · step '+ev.step:'')+'</span>';
+  if(ev.content) h+='<div class="txt">'+esc(truncate(ev.content,700))+'</div>';
+  (ev.commands||[]).forEach(c=>{ if(c) h+='<div class="codeblock"><div class="bar">COMMAND</div><pre class="cmd">'+esc(c)+'</pre></div>'; });
+  if(ev.role==='tool'&&ev.returncode!=null){ const ok=ev.returncode===0; h+='<span class="rc '+(ok?'ok':'bad')+'">exit '+ev.returncode+'</span>'; }
+  if(ev.role==='exit'&&ev.exit_status){ const ok=ev.exit_status==='Submitted'; h+='<span class="rc '+(ok?'ok':'bad')+'">'+ev.exit_status+'</span>'; }
+  div.innerHTML=h; feed.appendChild(div); feed.scrollTop=feed.scrollHeight;
+}
+
+function renderFiles(){
+  const tabs=document.getElementById('tabs'); tabs.innerHTML='';
+  document.getElementById('fileRunBtn').disabled = files.length===0;
+  if(!files.length){ document.getElementById('fileBody').innerHTML='<span class="empty">No files yet.</span>'; return; }
+  if(!files.find(f=>f.name===activeFile)) activeFile=files[0].name;
+  files.forEach(f=>{ const t=document.createElement('span'); t.className='tab'+(f.name===activeFile?' active':'');
+    t.textContent=f.name; t.onclick=()=>{ activeFile=f.name; renderFiles(); }; tabs.appendChild(t); });
+  const f=files.find(x=>x.name===activeFile);
+  document.getElementById('fileBody').textContent = f?f.content:'';
+}
+function populateRuns(){
+  const sel=document.getElementById('runSelect'); sel.innerHTML='';
+  if(!runs.length){ const o=document.createElement('option'); o.textContent='(no saved runs yet)'; sel.appendChild(o); return; }
+  runs.forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=r; if(r===activeRun) o.selected=true; sel.appendChild(o); });
+}
+function refreshFiles(){
+  fetch('/files').then(r=>r.json()).then(d=>{
+    runs=d.runs||[]; activeRun=d.run||null; files=d.files||[]; activeFile=null;
+    populateRuns(); renderFiles();
+  });
+}
+function selectRun(r){
+  activeRun=r;
+  fetch('/files?run='+encodeURIComponent(r)).then(res=>res.json()).then(d=>{ files=d.files||[]; activeFile=null; renderFiles(); });
+}
+
+function toggleStdin(){ const t=document.getElementById('stdinInput'); t.hidden=!t.hidden; if(!t.hidden) t.focus(); }
+
+function runFile(){
+  if(!activeFile || !activeRun) return;
+  const args=document.getElementById('argsInput').value;
+  const stdin=document.getElementById('stdinInput').value;
+  const out=document.getElementById('runout'), rc=document.getElementById('runRc');
+  out.classList.add('show'); rc.style.color='var(--blue)'; rc.textContent='Running '+activeFile+'…';
+  document.getElementById('runCmd').textContent='output'; document.getElementById('runResult').textContent='';
+  fetch('/runfile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({run:activeRun,name:activeFile,args,stdin})})
+    .then(r=>r.json()).then(res=>{
+      if(res.error){ rc.style.color='var(--err)'; rc.textContent=res.error; return; }
+      const ok=res.returncode===0, na=res.returncode===null;
+      rc.style.color = na?'var(--muted)':(ok?'var(--ok)':'var(--err)');
+      rc.textContent = na?'not runnable':(ok?'✓ exit 0':'✗ exit '+res.returncode);
+      document.getElementById('runCmd').textContent = res.cmd? '$ '+res.cmd : 'output';
+      document.getElementById('runResult').textContent = res.output;
+    });
+}
+
+function setDot(a,on){ document.getElementById('dot-'+a).classList.toggle('active',on); }
+function setExit(a,e){ const el=document.getElementById('exit-'+a);
+  if(!e){ el.style.display='none'; return; }
+  el.style.display='inline-block'; el.textContent=e; el.className='exitchip '+(e==='Submitted'?'ok':'bad'); }
+
+function reset(){
+  ['planner','implementer','tester'].forEach(a=>{ document.getElementById('feed-'+a).innerHTML=''; setDot(a,false); setExit(a,''); });
+  document.getElementById('plan').innerHTML='<span class="empty">waiting…</span>';
+  files=[]; activeFile=null; renderFiles();
+  document.getElementById('runout').classList.remove('show');
+}
+
+function startRun(){
+  const task=document.getElementById('task').value.trim();
+  if(!task){ banner('warn','Please enter a prompt first.'); return; }
+  reset(); document.getElementById('runBtn').disabled=true;
+  banner('running','Agents are working…',true); conn(true,'running');
+  fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task})})
+    .then(r=>r.json()).then(res=>{
+      if(res.error){ banner('err',res.error); document.getElementById('runBtn').disabled=false; return; }
+      openStream();
+    });
+}
+
+function openStream(){
+  const es=new EventSource('/stream');
+  es.onmessage=(m)=>{ const ev=JSON.parse(m.data);
+    switch(ev.type){
+      case 'info': document.getElementById('modelChip').textContent='model: '+ev.model; break;
+      case 'phase': setDot(ev.agent,ev.status==='start');
+        if(ev.status==='done'){ setExit(ev.agent,ev.exit); if(ev.exit==='LimitsExceeded') banner('warn','🛑 '+ev.agent+' hit its step/cost limit — Limit Exceeded.'); } break;
+      case 'message': addStep(ev); break;
+      case 'handoff': document.getElementById('plan').textContent=ev.plan; break;
+      case 'files': files=ev.files; if(ev.run) activeRun=ev.run; renderFiles(); break;
+      case 'error': banner('err',(ev.kind==='rate_limit'?'🛑 Limit Exceeded — ':'⚠️ Error — ')+ev.message); break;
+      case 'done': banner('done','✓ Saved '+(ev.saved||0)+' file(s) to saved/ · Planner: '+ev.planner+' · Implementer: '+ev.implementer+'. Pick a file below and run it with your input.'); break;
+      case 'end': es.close(); clearInterval(poll); refreshFiles(); conn(false,'idle');
+        document.getElementById('runBtn').disabled=false; setDot('planner',false); setDot('implementer',false); break;
+    }
+  };
+  es.onerror=()=>{ es.close(); clearInterval(poll); conn(false,'idle'); document.getElementById('runBtn').disabled=false; };
+}
+
+// ---------------- 3-Agent LangGraph pipeline ----------------
+let gSavedDir = "";
+
+function startGraph(){
+  const task = document.getElementById('task').value.trim();
+  if(!task){ banner('warn', 'Enter a task first.'); return; }
+  gSavedDir = "";
+  reset();
+  const gb = document.getElementById('graphBtn');
+  gb.disabled = true; gb.textContent = '⏳ Running…';
+  document.getElementById('runBtn').disabled = true;
+  banner('running','3-agent pipeline starting…',true); conn(true,'running');
+  fetch('/run_graph', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({task})})
+    .then(r => r.json()).then(res => {
+      if(res.error){ banner('err',res.error); endGraph(); return; }
+      openGraph();
+    });
+}
+
+function endGraph(){
+  const gb = document.getElementById('graphBtn');
+  gb.disabled = false; gb.textContent = 'Run 3-Agent ▶';
+  document.getElementById('runBtn').disabled = false;
+  conn(false,'idle');
+}
+
+function openGraph(){
+  const es = new EventSource('/graph_stream');
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    switch(ev.type){
+      case 'start': banner('running','3-agent pipeline running · '+ev.model,true); break;
+      case 'message': addStep(ev); break;
+      case 'node':
+        if(ev.status === 'start'){
+          setDot(ev.node, true);
+          banner('running',ev.node+' working'+(ev.retry?' (retry '+ev.retry+')':'')+'…',true);
+        } else {
+          setDot(ev.node, false);
+          if(ev.node === 'planner' && ev.plan) document.getElementById('plan').textContent = ev.plan;
+          if(ev.node === 'tester'){ const tr = ev.test_results || {}; setExit('tester', tr.all_passed ? 'Submitted' : 'failed'); }
+        }
+        break;
+      case 'retry': banner('running','↻ self-tests failed — looping back to implementer (retry '+ev.retry_count+')…',true); break;
+      case 'final':
+        banner(ev.all_passed?'done':'warn',
+          (ev.all_passed?'✓ passed its own tests':'✗ gave up after '+ev.retry_count+' retries')
+          + (gSavedDir?' · saved to '+gSavedDir:'')); break;
+      case 'saved': gSavedDir = ev.dir; break;
+      case 'error': banner('err',(ev.kind==='rate_limit'?'🛑 Limit Exceeded — ':'⚠️ Error — ')+ev.message); break;
+      case 'end': es.close(); ['planner','implementer','tester'].forEach(a=>setDot(a,false)); refreshFiles(); endGraph(); break;
+    }
+  };
+  es.onerror = () => { es.close(); endGraph(); };
+}
+
+refreshFiles();
+</script>
+</body>
+</html>

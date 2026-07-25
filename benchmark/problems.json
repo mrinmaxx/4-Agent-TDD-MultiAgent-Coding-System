@@ -1,0 +1,26 @@
+[
+  {
+    "id": "is_balanced",
+    "title": "Balanced Brackets",
+    "function_name": "is_balanced",
+    "signature": "is_balanced(s: str) -> bool",
+    "target_file": "solution.py",
+    "agent_prompt": "In a file named solution.py, write a function `is_balanced(s: str) -> bool`. It returns True if every opening bracket in the string s has a correctly matched and properly nested closing bracket, across three bracket types: parentheses (), square brackets [], and curly braces {}. Characters that are not brackets should be ignored. Otherwise it returns False.\n\nExamples:\n  is_balanced(\"()\")   -> True\n  is_balanced(\"([])\") -> True"
+  },
+  {
+    "id": "roman_to_int",
+    "title": "Roman Numeral to Integer",
+    "function_name": "roman_to_int",
+    "signature": "roman_to_int(s: str) -> int",
+    "target_file": "solution.py",
+    "agent_prompt": "In a file named solution.py, write a function `roman_to_int(s: str) -> int` that converts a valid Roman numeral string to its integer value. It must correctly handle Roman numerals' subtractive notation as well as the usual additive cases.\n\nExamples:\n  roman_to_int(\"III\") -> 3\n  roman_to_int(\"X\")   -> 10"
+  },
+  {
+    "id": "run_length_encode",
+    "title": "Run-Length Encoding",
+    "function_name": "run_length_encode",
+    "signature": "run_length_encode(s: str) -> str",
+    "target_file": "solution.py",
+    "agent_prompt": "In a file named solution.py, write a function `run_length_encode(s: str) -> str` that encodes each run of consecutive identical characters as the character followed immediately by the number of times it repeats in that run. The count is always written out, even when it is 1. Encoding is case-sensitive.\n\nExample:\n  run_length_encode(\"aaab\") -> \"a3b1\""
+  }
+]

@@ -1,0 +1,9 @@
+TEST RESULTS for solution.py (tdd_workspace, 3-agent run)  —  min_cost_drive
+PASSED 0/6   FAILED 6/6   HAS FAILURES ❌
+======================================================================
+[FAIL] start == target: got EXCEPTION: IndexError: list index out of range, expected 0
+[FAIL] reachable without refuel: got EXCEPTION: IndexError: list index out of range, expected 0
+[FAIL] must refuel once: got EXCEPTION: IndexError: list index out of range, expected 7
+[FAIL] no path -> -1: got EXCEPTION: IndexError: list index out of range, expected -1
+[FAIL] road longer than tank -> -1: got EXCEPTION: IndexError: list index out of range, expected -1
+[FAIL] min COST not distance: got EXCEPTION: IndexError: list index out of range, expected 5

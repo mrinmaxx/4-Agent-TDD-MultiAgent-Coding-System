@@ -1,0 +1,9 @@
+TEST RESULTS for solution.py  —  max_profit (Weighted Job Scheduling + Cooldown)
+PASSED 6/6   FAILED 0/6   ALL PASS ✅
+======================================================================
+[PASS] empty list: got 0, expected 0
+[PASS] single job: got 10, expected 10
+[PASS] touching endpoints, C=0: got 30, expected 30
+[PASS] cooldown blocks second, pick higher: got 20, expected 20
+[PASS] greedy trap (DP not greedy): got 100, expected 100
+[PASS] cooldown chain optimization: got 100, expected 100

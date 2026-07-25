@@ -1,0 +1,12 @@
+=== calculate_bill (dense-rule pricing engine) ===
+  [PASS] basic food only: got 600, expected 600
+  [PASS] electronics tax 10%: got 1100, expected 1100
+  [PASS] bulk discount qty>=10: got 945, expected 945
+  [PASS] member 5% off: got 2090, expected 2090
+  [PASS] SAVE20 valid on food: got 4800, expected 4800
+  [PASS] SAVE20 invalid under threshold: got 3000, expected 3000
+  [PASS] FLAT500 + CA surcharge: got 725, expected 725
+  [PASS] HARD: mixed-category proportional tax: got 3990, expected 3990
+  [PASS] rounding to nearest 5 (half up): got 1050, expected 1050
+
+Done.

@@ -1,0 +1,10 @@
+F
+=================================== FAILURES ===================================
+__________________________________ test_fuzz ___________________________________
+test_solution.py:4: in test_fuzz
+    xs[5]=1
+E   IndexError: list assignment index out of range
+=========================== short test summary info ============================
+FAILED test_solution.py::test_fuzz - IndexError: list assignment index out of...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.13s

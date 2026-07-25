@@ -1,0 +1,36 @@
+4-AGENT TDD RUN  —  20260725-173738
+============================================================
+problem          : Implement in a file called solution.py:
+
+    def length_of_longest_substring(s: str) -> int:
+
+Given a string `s`, find the length of the longest substring without repeating characters.
+
+A substring is a contiguous sequence of characters within the string.
+
+Examples:
+- Input: s = "abcabcbb"  → Output: 3  (The answer is "abc", with length 3)
+- Input: s = "bbbbb"     → Output: 1  (The answer is "b", with length 1)
+- Input: s = "pwwkew"    → Output: 3  (The answer is "wke", with length 3)
+
+Constraints:
+- 0 <= len(s) <= 5 * 10^4
+- s consists of English letters, digits, symbols and spaces.
+
+Hints:
+- Use the sliding window technique with two pointers (left and right).
+- Maintain a set or dictionary to track characters in the current window.
+- When you see a duplicate, move the left pointer past the previous occurrence.
+
+Include a docstring explaining the sliding window approach and complexity (O(n) time, O(min(n, 128)) space).
+
+No test code.
+model            : groq/llama-3.1-8b-instant
+final_status     : success
+passed           : True
+solution fixes   : 0
+test regenerations: 0
+============================================================
+--- test output ---
+.                                                                        [100%]
+1 passed in 0.01s

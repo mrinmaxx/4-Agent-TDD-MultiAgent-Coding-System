@@ -1,0 +1,9 @@
+TEST RESULTS for solution3.py  —  min_cost_drive (Constrained Shortest Path + Fuel)
+PASSED 4/6   FAILED 2/6   HAS FAILURES ❌
+======================================================================
+[PASS] start == target: got 0, expected 0
+[PASS] reachable without refuel: got 0, expected 0
+[FAIL] must refuel once: got -1, expected 7
+[PASS] no path -> -1: got -1, expected -1
+[PASS] road longer than tank -> -1: got -1, expected -1
+[FAIL] min COST not distance: got -1, expected 5
