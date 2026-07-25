@@ -46,13 +46,23 @@ MODEL_EXTRA_KWARGS: dict = model_extra_kwargs(MODEL_NAME)  # kept for back-compa
 
 # --- Orchestration limits ---
 MAX_RETRIES: int = 3            # Implementer <-> Reviewer fix cycles after the first attempt
-MAX_SYNTAX_RETRIES: int = 2     # Test Architect syntax-repair cycles
+MAX_SYNTAX_RETRIES: int = 1     # Test Architect syntax-repair cycles
+MAX_TEST_FIXES: int = 1         # harness-bug regenerations (lowered from 2 to save tokens)
 USE_BRUTE_FORCE_VERIFIER: bool = True  # tests compute expected values from a reference impl
 
 # --- Efficiency knobs ---
 TOKEN_BUDGET: int = 8000        # approximate input-token ceiling for retry prompts
 _CHARS_PER_TOKEN: int = 4       # rough heuristic used only for trimming
 MAX_PROMPT_CHARS: int = TOKEN_BUDGET * _CHARS_PER_TOKEN
+MAX_TRACEBACK_LINES: int = 3    # keep only the last N traceback lines (where the error is)
+TEST_CODE_MAX_CHARS: int = 2000  # hard cap on generated test size (safe whole-line truncation)
+REVIEWER_OUTPUT_JSON: bool = True  # Reviewer emits JSON the Implementer consumes directly
+
+# --- Quality loop + memory (reliability components) ---
+MAX_QUALITY_LOOP: int = 2       # max refinement passes per implementation cycle (Code Checker + Critic)
+MAX_MEMORY_ENTRIES: int = 10    # cap on remembered attempts in the memory bank
+USE_CODE_CHECKER: bool = True   # deterministic ast.parse gate before the Critic (free — keep on)
+USE_CRITIC: bool = False        # LLM quality review DISABLED to save tokens (re-enable on a bigger model)
 
 # --- Deterministic test execution ---
 TEST_TIMEOUT: int = 30          # seconds; kills infinite loops / accidentally exponential code
@@ -62,6 +72,7 @@ PLANNER_STEPS: int = 8
 ARCHITECT_STEPS: int = 12
 IMPLEMENTER_STEPS: int = 12
 REVIEWER_STEPS: int = 6
+CRITIC_STEPS: int = 6
 COST_LIMIT: float = 1.0         # safety brake per agent
 
 # --- Workspace + artifact names (all four agents share one directory) ---
@@ -74,3 +85,6 @@ SPEC_FILE: str = "spec.md"
 TEST_FILE: str = "test_solution.py"
 SOLUTION_FILE: str = "solution.py"
 FIX_FILE: str = "fix.md"
+REVIEW_FILE: str = "review.json"   # Reviewer's structured JSON diagnosis
+PATCH_FILE: str = "patch.py"       # Implementer's function-only patch on targeted retries
+CRITIC_FILE: str = "critic.json"   # Critic's structured quality review

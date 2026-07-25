@@ -1,6 +1,10 @@
 .env
 *.traj.json
 workspace/
+tdd_workspace/
 saved/
 results/
+four_agent_results/
+three_agent_results/
 __pycache__/
+*.pyc

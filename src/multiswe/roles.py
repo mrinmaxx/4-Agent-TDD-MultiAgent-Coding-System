@@ -1,19 +1,19 @@
-"""The four TDD agent roles, each wrapping mini-swe-agent's ``DefaultAgent``.
+"""The TDD agent roles, each wrapping mini-swe-agent's ``DefaultAgent``.
 
-Design notes
-------------
-* Every role's SYSTEM prompt is a module-level constant — defined once, reused for every
-  call. That is our "global prompt cache": the heavy role definition is never rebuilt, and
-  the only per-call text is a small, trimmed ``task`` string. (True provider-side prompt
-  caching is not available on the Groq text-based path, so we minimise tokens instead.)
-* Each agent runs mini-swe-agent's normal bash loop and writes its artifact to the shared
-  workspace with a heredoc. ``_capture`` reads that file back; if the model misbehaved and
-  never wrote it, we fall back to the fenced code block in the model's last message so the
-  pipeline never proceeds on an empty artifact.
+Reliability-with-any-model design:
+* DOMAIN EXPERTISE — every role has a strict specialist SYSTEM prompt that names its domain and
+  FORBIDS out-of-scope behaviour (Planner never codes, Reviewer/Critic emit JSON only, etc.).
+* MEMORY — the Implementer receives a compact summary of past attempts so it stops repeating
+  the same mistakes.
+* TOKEN EFFICIENCY — static context (spec.md, test_solution.py) lives on disk and is referenced
+  by name on retries; retries send only the failing function; the Reviewer/Critic speak JSON.
+
+Deterministic gates (Code Checker, Memory Summarizer) live in orchestrator.py — they need no LLM.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Callable, Optional
@@ -24,16 +24,19 @@ from jinja2 import Template
 from multiswe.config import (
     ARCHITECT_STEPS,
     COST_LIMIT,
-    FIX_FILE,
+    CRITIC_FILE,
+    CRITIC_STEPS,
     IMPLEMENTER_MODEL,
     IMPLEMENTER_STEPS,
     MODEL_NAME,
-    model_extra_kwargs,
+    PATCH_FILE,
     PLANNER_STEPS,
+    REVIEW_FILE,
     REVIEWER_STEPS,
     SOLUTION_FILE,
     SPEC_FILE,
     TEST_FILE,
+    model_extra_kwargs,
 )
 
 from minisweagent.agents.default import DefaultAgent
@@ -43,16 +46,10 @@ from minisweagent.models.utils.content_string import get_content_string
 
 
 class SafeLocalEnvironment(LocalEnvironment):
-    """LocalEnvironment that refuses git commands.
+    """LocalEnvironment that refuses git commands (weak models read 'submit' as 'git push').
 
-    Weak models (e.g. llama-3.1-8b) tend to read "submit final output" as "git add/commit/push",
-    which would try to publish the workspace (and leak the .env / API keys). We intercept any
-    command that starts with ``git`` and return a normal observation telling the agent the work
-    is already saved locally, so it stops and just issues the real submit command instead.
-
-    NOTE: ``execute`` must return the SAME dict shape as the parent
-    (``{"output", "returncode", "exception_info"}``) — returning a bare string would break the
-    agent's observation formatting.
+    ``execute`` returns the parent's dict shape (``{output, returncode, exception_info}``) — a
+    bare string would break observation formatting.
     """
 
     _BLOCKED = {
@@ -71,22 +68,17 @@ class SafeLocalEnvironment(LocalEnvironment):
 
 
 class TolerantTextbasedModel(LitellmTextbasedModel):
-    """Weak models (e.g. llama-3.1-8b) frequently emit SEVERAL command blocks in a single
-    turn, which the strict parser rejects with a FormatError — aborting the whole role.
-    We tolerate that by executing only the FIRST block. Zero blocks still defers to the base
-    class (which re-prompts), so genuine truncations are handled normally.
-    """
+    """Executes only the FIRST command block when weak models emit several in one turn."""
 
     def _parse_actions(self, response) -> list[dict]:
         content = response.choices[0].message.content or ""
         actions = [a.strip() for a in re.findall(self.config.action_regex, content, re.DOTALL)]
         if actions:
             return [{"command": actions[0]}]
-        return super()._parse_actions(response)  # 0 actions -> standard FormatError / re-prompt
+        return super()._parse_actions(response)
 
-# Callback signature used to stream a raw agent message to the UI: (role_name, message).
+
 StepEmitter = Optional[Callable[[str, dict], None]]
-
 _FENCE_RE = re.compile(r"```(?:[\w+-]*)\n(.*?)```", re.DOTALL)
 
 
@@ -101,7 +93,6 @@ def _last_assistant_text(agent: DefaultAgent) -> str:
 
 
 def _extract_block(text: str) -> str:
-    """Return the largest fenced code block in ``text`` (fallback when no file was written)."""
     blocks = _FENCE_RE.findall(text or "")
     return max(blocks, key=len).strip() if blocks else ""
 
@@ -118,82 +109,81 @@ class _StreamingAgent(DefaultAgent):
         for m in messages:
             try:
                 self._emit_step(self._role, m)
-            except Exception:  # a broken UI stream must never crash the agent
+            except Exception:
                 pass
         return super().add_messages(*messages)
 
 
 # --------------------------------------------------------------------------- base role
 class Role:
-    """Base class: builds a fresh agent per call and captures the artifact it produces."""
-
     NAME: str = "role"
     SYSTEM: str = ""
     STEP_LIMIT: int = 10
-    ARTIFACT: Optional[str] = None  # file this role writes, or None
-    MODEL: Optional[str] = None     # None -> use the global default MODEL_NAME
+    ARTIFACT: Optional[str] = None
+    MODEL: Optional[str] = None
 
     def __init__(self, workspace: Path, emit_step: StepEmitter = None):
         self.workspace = Path(workspace)
         self.emit_step = emit_step
 
-    def _agent(self) -> DefaultAgent:
+    def _get_agent(self, system_prompt: str) -> DefaultAgent:
         name = self.MODEL or MODEL_NAME
         model = TolerantTextbasedModel(model_name=name, model_kwargs=model_extra_kwargs(name))
-        env = SafeLocalEnvironment(cwd=str(self.workspace))  # blocks git add/commit/push
+        env = SafeLocalEnvironment(cwd=str(self.workspace))
         kwargs = dict(
-            system_template=self.SYSTEM,
-            instance_template="{{task}}",  # per-call content is injected as `task`
+            system_template=system_prompt,
+            instance_template="{{task}}",
             step_limit=self.STEP_LIMIT,
             cost_limit=COST_LIMIT,
-            max_consecutive_format_errors=6,  # extra slack for weak models before giving up
+            max_consecutive_format_errors=6,
             output_path=self.workspace / f"{self.NAME}.traj.json",
         )
         if self.emit_step is not None:
             return _StreamingAgent(model, env, emit_step=self.emit_step, role=self.NAME, **kwargs)
         return DefaultAgent(model, env, **kwargs)
 
-    def _run(self, task: str) -> str:
-        """Run the agent on ``task`` and return its artifact (file content, or fallback)."""
-        agent = self._agent()
+    def _run(self, task: str, artifact: Optional[str] = None) -> str:
+        agent = self._get_agent(self.SYSTEM)
         agent.run(task)
-        if self.ARTIFACT:
-            path = self.workspace / self.ARTIFACT
+        target = artifact or self.ARTIFACT
+        if target:
+            path = self.workspace / target
             if path.exists() and path.read_text().strip():
                 return path.read_text()
-            # Fallback: the model forgot to write the file — recover its fenced block.
             recovered = _extract_block(_last_assistant_text(agent))
             if recovered:
-                path.write_text(recovered)  # persist so the workspace stays consistent
+                path.write_text(recovered)
                 return recovered
             return ""
         return _last_assistant_text(agent)
 
 
-# --------------------------------------------------------------------------- prompts
-PLANNER_SYSTEM = """\
-You are the PLANNER (role: Oracle) in a 4-agent Test-Driven-Development team. You turn a
-natural-language problem into a precise SPEC. You write ZERO code — English and short
-pseudocode only.
-
+# =========================================================================== PROMPTS
+_FORMAT = """\
 Act via EXACTLY ONE fenced command block per step, labelled mswea_bash_command:
 
 THOUGHT: why you run this.
 ```mswea_bash_command
 your_command_here
 ```
+"""
 
-Write the spec to spec.md IN THE CURRENT DIRECTORY with these sections:
-- Function: the EXACT signature the solution must expose, e.g.
-  `def two_sum(nums: list[int], target: int) -> list[int]`
-- Summary: one line describing what it computes.
+# --- Planner: Requirements Engineer -----------------------------------------
+PLANNER_SYSTEM = f"""\
+You are the PLANNER — a REQUIREMENTS ENGINEER — in a 4-agent TDD team.
+
+DOMAIN: requirements engineering, edge-case discovery, invariant definition.
+FORBIDDEN: writing ANY code, imports, git. English + short pseudocode ONLY. Keep spec.md UNDER
+300 words, focused on invariants and edge cases.
+
+{_FORMAT}
+Write spec.md with these markdown sections:
+- Function: exact signature, e.g. `def two_sum(nums: list[int], target: int) -> list[int]`
+- Summary: one line.
 - Invariants: properties the output must ALWAYS satisfy.
-- Edge cases: empty input, single element, duplicates, negatives, large input, etc.
-- Brute-force verifier: a simple, obviously-correct strategy the tests can use to compute
-  the expected answer independently (e.g. "try all O(n^2) pairs", "sort a copy and compare").
-  Describe it in English/pseudocode ONLY — never real code.
+- Edge cases: empty / single / duplicate / negative / large / boundary.
+- Brute-force verifier: a simple, obviously-correct strategy for the tests (English/pseudocode ONLY).
 
-Write it with a heredoc, then verify it exists:
 ```mswea_bash_command
 cat > spec.md <<'EOF'
 Function: ...
@@ -205,7 +195,7 @@ Edge cases:
 Brute-force verifier: ...
 EOF
 ```
-After `test -f spec.md && cat spec.md` shows it, finish with EXACTLY:
+After `test -f spec.md && cat spec.md`, finish with EXACTLY:
 ```mswea_bash_command
 echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
 ```
@@ -215,38 +205,37 @@ PLANNER_TASK = """\
 Problem:
 {{problem}}
 
-Write spec.md (Function, Summary, Invariants, Edge cases, Brute-force verifier), then submit.
-Do NOT write any implementation code.
+Write spec.md (under 300 words), then submit. Do NOT write implementation code.
 """
 
-ARCHITECT_SYSTEM = """\
-You are the TEST ARCHITECT (role: Constrainer) in a 4-agent TDD team. From spec.md you write
-test_solution.py — a pytest file that verifies ANY candidate solution.py.
+# --- Test Architect: Fuzz / Reference Expert --------------------------------
+ARCHITECT_SYSTEM = f"""\
+You are the TEST ARCHITECT — a PROPERTY-BASED TESTING expert — in a 4-agent TDD team. From
+spec.md you write test_solution.py, a pytest file that verifies ANY candidate solution.py.
 
-HARD RULES:
-- Include a brute-force REFERENCE function (simple, slow, obviously correct) that implements
-  the spec's brute-force verifier.
-- Write PROPERTY-BASED / FUZZ tests: generate ~50 RANDOM inputs (call random.seed(0) first
-  so failures reproduce) and assert the candidate's output EQUALS the reference output.
-- Do NOT hardcode expected values for specific inputs. Every expected value must be COMPUTED
-  at runtime by the reference function (a few tiny edge cases like empty input are fine, but
-  their expected value must also come from the reference function).
-- Import the candidate as `from solution import <func>` using the EXACT name from spec.md.
-- Keep it deterministic and fast: bound random input sizes so brute force stays quick.
+RULES:
+- Write a SIMPLE brute-force reference (< 30 lines). Use O(n^2) or O(n^3) — slow but OBVIOUSLY
+  correct. (E.g. Trapping Rain Water: for each position scan left and right for the max, the
+  O(n^2) way. Two Sum: try all O(n^2) pairs.)
+- NEVER optimise the reference. That is the Implementer's job.
+- Generate exactly 10 random fuzz tests (not 20, not 50). `random.seed(0)` first, bounded input
+  sizes, and assert `candidate(args) == reference(args)`. NEVER hardcode expected values.
+- `from solution import <func>` using the exact name from spec.md.
+- Generators must never index out of range. Output ONLY raw Python — no explanations, no markdown.
 
-Act via EXACTLY ONE fenced mswea_bash_command block per step. Write the file with a heredoc:
+{_FORMAT}
 ```mswea_bash_command
 cat > test_solution.py <<'EOF'
 import random
 from solution import your_func
 
 def _reference(*args):
-    ...  # simple brute force
+    ...  # simplest correct method, < 30 lines, never optimised
 
 def test_fuzz():
     random.seed(0)
-    for _ in range(50):
-        # build random args within small bounds
+    for _ in range(10):
+        # bounded random args
         assert your_func(*args) == _reference(*args)
 EOF
 ```
@@ -262,116 +251,172 @@ Spec (spec.md):
 {{spec}}
 -----------------------------------
 {% if error %}
-Your previous test_solution.py is BROKEN — it either failed to compile or crashed at runtime
-(the bug is in the TEST HARNESS itself, not the candidate solution). Fix the harness and
-rewrite the file. Common causes: an out-of-range index in the random-input generator, calling
-random.choice('') on an empty string, or a wrong argument count.
+Your previous test_solution.py is BROKEN — it failed to compile or crashed at runtime (bug in the
+TEST HARNESS, not the candidate). Fix the harness and rewrite the file.
 Previous test_solution.py:
 -----------------------------------
 {{prev_tests}}
 -----------------------------------
-Error / traceback:
+Error:
 -----------------------------------
 {{error}}
 -----------------------------------
 {% endif %}
-Write test_solution.py (brute-force reference + ~50-case fuzz test, no hardcoded expected
-values, generators that never index out of range), then submit.
+Write test_solution.py (simple brute-force reference < 30 lines + 10-20 fuzz cases), then submit.
 """
 
-IMPLEMENTER_SYSTEM = """\
-You are the IMPLEMENTER (role: Solver) in a 4-agent TDD team. You write solution.py: an
-efficient, correct implementation of the spec that passes test_solution.py.
+# --- Implementer: Algorithm Engineer ----------------------------------------
+IMPLEMENTER_SYSTEM = f"""\
+You are the IMPLEMENTER — an ALGORITHM ENGINEER — in a 4-agent TDD team. You turn a spec + failing
+tests into correct, efficient Python using the STANDARD algorithm for the problem type. CODE ONLY.
 
-RULES:
-- Expose the EXACT function signature from the spec.
-- Do NOT read, edit, or weaken test_solution.py — make the real code correct instead.
-- Handle every edge case the spec lists.
+DOMAIN: data structures, algorithms, complexity, edge-case-correct code.
+FORBIDDEN: writing/editing tests, git, prose, or changing the required function signature.
 
-Act via EXACTLY ONE fenced mswea_bash_command block per step. Write with a heredoc:
-```mswea_bash_command
-cat > solution.py <<'EOF'
-def your_func(...):
-    ...
-EOF
-```
-You may run it to sanity-check. Then finish with EXACTLY:
+{_FORMAT}
+Write the file NAMED IN YOUR TASK with ONE heredoc, containing exactly the requested code and
+nothing else. Static context (spec.md, test_solution.py) is already on disk — `cat` it if needed,
+never paste it back. When done, finish with EXACTLY:
 ```mswea_bash_command
 echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
 ```
 """
 
-IMPLEMENTER_TASK = """\
-{% if fix_instruction %}
-RETRY. Your previous solution.py failed the tests. Apply this SPECIFIC fix and change only
-what is needed:
+_MEMORY_BLOCK = """\
+{% if memory %}Your history on THIS problem (learn from it — DO NOT repeat these mistakes):
 -----------------------------------
-{{fix_instruction}}
+{{memory}}
 -----------------------------------
-Previous solution.py:
------------------------------------
-{{prev_solution}}
------------------------------------
-The tests it must pass (test_solution.py):
------------------------------------
-{{tests}}
------------------------------------
-Rewrite solution.py to fix exactly this, then submit.
-{% else %}
+{% endif %}"""
+
+IMPLEMENTER_TASK = _MEMORY_BLOCK + """\
 Spec (spec.md):
 -----------------------------------
 {{spec}}
 -----------------------------------
-The tests your code must pass (test_solution.py):
+Tests it must pass (test_solution.py):
 -----------------------------------
 {{tests}}
 -----------------------------------
-Write an efficient, correct solution.py, then submit.
-{% endif %}
+Write an efficient, correct solution.py now (write to solution.py), then submit.
 """
 
-REVIEWER_SYSTEM = """\
-You are the REVIEWER / FIXER (role: Debugger) in a 4-agent TDD team. You are given the current
-solution.py, the tests, and the RAW pytest traceback. Your ONLY job is to translate the
-failure into a SPECIFIC, actionable, plain-English fix instruction for the Implementer.
+IMPLEMENTER_FIX_FUNCTION_TASK = _MEMORY_BLOCK + """\
+RETRY — TARGETED FUNCTION FIX. Fix ONLY the function below; change nothing else.
 
-HARD RULES:
-- NEVER invent or guess expected output values — the tests already encode the truth.
-- Point at the concrete cause: the exception type, the offending line/logic, and what to
-  change. E.g. "solution.py line 12 raises TypeError because `x` is None on empty input —
-  return [] before indexing", or "off-by-one: the loop should be range(1, n+1)".
-- Be concise (a few lines). Diagnose and instruct; do NOT rewrite the whole solution.
+Failing function (from solution.py):
+-----------------------------------
+{{failing_function}}
+-----------------------------------
+Error (last traceback lines):
+-----------------------------------
+{{traceback}}
+-----------------------------------
+Reviewer diagnosis (JSON): {{review}}
 
-Write your instruction to fix.md with a heredoc:
+Write ONLY the corrected function definition to patch.py — NO imports, NO other functions, NO
+comments. It must still satisfy the existing test_solution.py. Then submit:
 ```mswea_bash_command
-cat > fix.md <<'EOF'
-<specific, plain-English fix instruction>
+cat > patch.py <<'EOF'
+def same_function_name(...):
+    ...corrected body...
 EOF
 ```
-Then finish with EXACTLY:
+"""
+
+IMPLEMENTER_FIX_FULL_TASK = _MEMORY_BLOCK + """\
+RETRY — the targeted patch could not be applied, so rewrite the whole file.
+Previous solution.py:
+-----------------------------------
+{{prev_solution}}
+-----------------------------------
+What to fix:
+-----------------------------------
+{{fix_instruction}}
+-----------------------------------
+Rewrite solution.py to fix exactly this. It must pass the existing test_solution.py and match
+spec.md (both on disk). Then submit.
+"""
+
+IMPLEMENTER_REFINE_TASK = """\
+Your solution.py has these SPECIFIC issues:
+-----------------------------------
+{{issues}}
+-----------------------------------
+Current solution.py:
+-----------------------------------
+{{code}}
+-----------------------------------
+Fix ONLY these issues; change nothing else. Rewrite solution.py, then submit.
+"""
+
+# --- Critic: Senior Code Reviewer (JSON only) -------------------------------
+CRITIC_SYSTEM = f"""\
+You are the CRITIC — a SENIOR CODE REVIEWER — in a 4-agent TDD team. You review candidate code
+BEFORE it reaches the test runner and emit JSON ONLY.
+
+DOMAIN: spotting edge-case gaps, obvious bugs, and gross inefficiency by reading code.
+FORBIDDEN: rewriting the code, running it, or ANY text outside the JSON object.
+
+Check for: (1) edge cases (empty input, negatives, off-by-one), (2) performance, (3) obvious bugs.
+Be pragmatic — approve code that looks correct even if imperfect.
+
+{_FORMAT}
+Write critic.json with EXACTLY these keys:
+```mswea_bash_command
+cat > critic.json <<'EOF'
+{{"score": 0, "issues": ["one short issue", "..."], "approved": true}}
+EOF
+```
+`approved` is true when the code looks correct (score >= 7 and no blocking issue). Then finish:
+```mswea_bash_command
+echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
+```
+"""
+
+CRITIC_TASK = """\
+Review this solution.py (do NOT run it) against spec.md (on disk):
+-----------------------------------
+{{code}}
+-----------------------------------
+Output critic.json with keys {"score": 0-10, "issues": [..], "approved": bool}. JSON ONLY.
+"""
+
+# --- Reviewer: Debugger (JSON only) -----------------------------------------
+REVIEWER_SYSTEM = f"""\
+You are the REVIEWER — a DEBUGGER — in a 4-agent TDD team. You read a Python traceback and emit the
+smallest actionable fix. JSON ONLY.
+
+DOMAIN: interpreting exceptions/assertions and localising the bug.
+FORBIDDEN: rewriting the solution, guessing expected values, ANY text outside the JSON object.
+
+{_FORMAT}
+Write review.json with EXACTLY these keys:
+```mswea_bash_command
+cat > review.json <<'EOF'
+{{"error_type": "IndexError", "line": 12, "suggestion": "add a bounds check before indexing"}}
+EOF
+```
+`suggestion` MUST be <= 20 words. Then finish with EXACTLY:
 ```mswea_bash_command
 echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
 ```
 """
 
 REVIEWER_TASK = """\
-Current solution.py:
+Failing function:
 -----------------------------------
-{{solution}}
+{{code}}
 -----------------------------------
-Tests (test_solution.py):
------------------------------------
-{{tests}}
------------------------------------
-RAW pytest traceback:
+Traceback (last lines only):
 -----------------------------------
 {{traceback}}
 -----------------------------------
-Write fix.md: a specific, plain-English fix instruction. Do NOT guess expected values.
+Write review.json {"error_type","line","suggestion"} — JSON ONLY, suggestion <= 20 words.
 """
 
 
-# --------------------------------------------------------------------------- roles
+# =========================================================================== ROLES
 class Planner(Role):
     NAME, SYSTEM, STEP_LIMIT, ARTIFACT = "planner", PLANNER_SYSTEM, PLANNER_STEPS, SPEC_FILE
 
@@ -386,26 +431,50 @@ class TestArchitect(Role):
         return self._run(_render(ARCHITECT_TASK, spec=spec, prev_tests=prev_tests, error=error))
 
     def write_tests(self, spec: str, prev_tests: str = "", error: str = "") -> str:
-        """Alias for run(); regenerates test_solution.py, optionally repairing a broken harness."""
         return self.run(spec, prev_tests=prev_tests, error=error)
 
 
 class Implementer(Role):
     NAME, SYSTEM, STEP_LIMIT, ARTIFACT = "implementer", IMPLEMENTER_SYSTEM, IMPLEMENTER_STEPS, SOLUTION_FILE
-    MODEL = IMPLEMENTER_MODEL  # stronger model for the actual coding
+    MODEL = IMPLEMENTER_MODEL
 
-    def run(self, spec: str = "", tests: str = "", fix_instruction: str = "",
-            prev_solution: str = "") -> str:
-        return self._run(_render(IMPLEMENTER_TASK, spec=spec, tests=tests,
-                                 fix_instruction=fix_instruction, prev_solution=prev_solution))
+    def run(self, spec: str = "", tests: str = "", memory: str = "") -> str:
+        """First attempt: full solution.py from spec + tests (+ memory of past attempts)."""
+        return self._run(_render(IMPLEMENTER_TASK, spec=spec, tests=tests, memory=memory))
 
-    def fix(self, prev_solution: str, fix_instruction: str, tests: str) -> str:
-        """Targeted retry: rewrite solution.py given the Reviewer's fix + the previous code."""
-        return self.run(tests=tests, fix_instruction=fix_instruction, prev_solution=prev_solution)
+    def fix_function(self, failing_function: str, traceback: str, review, memory: str = "") -> str:
+        """Targeted retry: return ONLY the corrected function (written to patch.py)."""
+        review_json = json.dumps(review) if isinstance(review, dict) else str(review or "{}")
+        return self._run(
+            _render(IMPLEMENTER_FIX_FUNCTION_TASK, failing_function=failing_function,
+                    traceback=traceback, review=review_json, memory=memory),
+            artifact=PATCH_FILE,
+        )
+
+    def fix(self, prev_solution: str, fix_instruction: str, memory: str = "") -> str:
+        """Fallback retry: rewrite the whole solution.py."""
+        return self._run(
+            _render(IMPLEMENTER_FIX_FULL_TASK, prev_solution=prev_solution,
+                    fix_instruction=fix_instruction, memory=memory),
+            artifact=SOLUTION_FILE,
+        )
+
+    def refine(self, code: str, issues: str) -> str:
+        """Quality-loop refinement: fix ONLY the listed issues, rewrite solution.py."""
+        return self._run(_render(IMPLEMENTER_REFINE_TASK, code=code, issues=issues),
+                         artifact=SOLUTION_FILE)
+
+
+class Critic(Role):
+    NAME, SYSTEM, STEP_LIMIT, ARTIFACT = "critic", CRITIC_SYSTEM, CRITIC_STEPS, CRITIC_FILE
+
+    def run(self, code: str) -> str:
+        """Return the Critic's raw critic.json text (the orchestrator parses it)."""
+        return self._run(_render(CRITIC_TASK, code=code))
 
 
 class Reviewer(Role):
-    NAME, SYSTEM, STEP_LIMIT, ARTIFACT = "reviewer", REVIEWER_SYSTEM, REVIEWER_STEPS, FIX_FILE
+    NAME, SYSTEM, STEP_LIMIT, ARTIFACT = "reviewer", REVIEWER_SYSTEM, REVIEWER_STEPS, REVIEW_FILE
 
-    def run(self, solution: str, tests: str, traceback: str) -> str:
-        return self._run(_render(REVIEWER_TASK, solution=solution, tests=tests, traceback=traceback))
+    def run(self, code: str, traceback: str) -> str:
+        return self._run(_render(REVIEWER_TASK, code=code, traceback=traceback))
